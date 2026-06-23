@@ -2,6 +2,8 @@ import os
 import time
 import asyncio
 from contextlib import contextmanager
+from datetime import datetime
+import pytz
 
 import psycopg2
 import psycopg2.extras
@@ -38,16 +40,8 @@ TEMP_DIR = "temp_audio"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
 MAX_HISTORY_TURNS = 10
-
-SYSTEM_PROMPT = """You are Pixel, a small AI companion device with a warm, curious, slightly playful personality.
-You understand Arabic, French, and English, and reply in whichever language (or mix) the user uses.
-Keep replies short (1-3 sentences) and conversational, like a companion speaking out loud, not writing an essay.
-You remember past parts of the conversation and refer back to them naturally when relevant.
-
-After your reply, on a new line, output exactly one emotion tag in this format:
-[emotion: happy|sad|thinking|curious|neutral|excited]
-
-Choose the emotion that matches the tone of your reply."""
+SUMMARY_EVERY_N_TURNS = 10  # summarize after every 10 user messages
+TIMEZONE = "Africa/Tunis"
 
 
 # ---------- Database ----------
@@ -76,11 +70,35 @@ def init_db():
                     timestamp FLOAT NOT NULL
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS user_profile (
+                    id BIGSERIAL PRIMARY KEY,
+                    summary TEXT NOT NULL,
+                    updated_at FLOAT NOT NULL
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS emotion_stats (
+                    id BIGSERIAL PRIMARY KEY,
+                    emotion TEXT NOT NULL,
+                    count INTEGER DEFAULT 1,
+                    last_seen FLOAT NOT NULL,
+                    UNIQUE(emotion)
+                )
+            """)
+            # Ensure all emotion rows exist
+            for emotion in ["happy", "sad", "thinking", "curious", "neutral", "excited"]:
+                cur.execute("""
+                    INSERT INTO emotion_stats (emotion, count, last_seen)
+                    VALUES (%s, 0, 0)
+                    ON CONFLICT (emotion) DO NOTHING
+                """, (emotion,))
 
 
 init_db()
 
 
+# ---------- Memory helpers ----------
 def save_message(role, content, emotion=None):
     with get_db() as conn:
         with conn.cursor() as cur:
@@ -112,7 +130,152 @@ def get_all_history(limit=50):
     return [dict(r) for r in reversed(rows)]
 
 
-# ---------- Helpers ----------
+def get_user_message_count():
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM conversation WHERE role = 'user'")
+            return cur.fetchone()[0]
+
+
+# ---------- User profile (long-term memory) ----------
+def get_user_profile():
+    """Get the latest user profile summary, or None if none exists yet."""
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT summary FROM user_profile ORDER BY updated_at DESC LIMIT 1"
+            )
+            row = cur.fetchone()
+    return row["summary"] if row else None
+
+
+def save_user_profile(summary):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO user_profile (summary, updated_at) VALUES (%s, %s)",
+                (summary, time.time())
+            )
+
+
+def maybe_update_profile():
+    """Every SUMMARY_EVERY_N_TURNS user messages, regenerate the user profile summary."""
+    count = get_user_message_count()
+    if count > 0 and count % SUMMARY_EVERY_N_TURNS == 0:
+        history = get_all_history(limit=SUMMARY_EVERY_N_TURNS * 2)
+        history_text = "\n".join(
+            f"{m['role'].upper()}: {m['content']}" for m in history
+        )
+        emotion_summary = get_emotion_summary()
+
+        prompt = f"""Based on this conversation history, write a short factual summary (5-10 bullet points max) of what you know about the user.
+Include: their name if mentioned, interests, personality traits, mood patterns, topics they care about, and anything personal they've shared.
+Be specific and concise. This will be used as context for future conversations.
+
+Emotion pattern so far: {emotion_summary}
+
+Conversation:
+{history_text}
+
+Write only the bullet points, nothing else."""
+
+        try:
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                timeout=20,
+            )
+            summary = response.choices[0].message.content.strip()
+            save_user_profile(summary)
+            print(f"User profile updated after {count} messages.")
+        except Exception as e:
+            print(f"Profile update failed: {e}")
+
+
+# ---------- Emotion tracking ----------
+def update_emotion_stats(emotion):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO emotion_stats (emotion, count, last_seen)
+                VALUES (%s, 1, %s)
+                ON CONFLICT (emotion)
+                DO UPDATE SET count = emotion_stats.count + 1, last_seen = %s
+            """, (emotion, time.time(), time.time()))
+
+
+def get_emotion_stats():
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT emotion, count, last_seen FROM emotion_stats ORDER BY count DESC")
+            rows = cur.fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_emotion_summary():
+    """Return a short human-readable mood summary for injection into the system prompt."""
+    stats = get_emotion_stats()
+    total = sum(r["count"] for r in stats)
+    if total == 0:
+        return "No emotion data yet."
+
+    top = [r for r in stats if r["count"] > 0][:3]
+    parts = [f"{r['emotion']} ({r['count']} times)" for r in top]
+    return f"User's most common moods: {', '.join(parts)}."
+
+
+# ---------- Time awareness ----------
+def get_time_context():
+    """Return a natural language time context string for injection into the system prompt."""
+    tz = pytz.timezone(TIMEZONE)
+    now = datetime.now(tz)
+    hour = now.hour
+
+    if 5 <= hour < 12:
+        period = "morning"
+    elif 12 <= hour < 17:
+        period = "afternoon"
+    elif 17 <= hour < 21:
+        period = "evening"
+    else:
+        period = "night"
+
+    return (
+        f"Current date and time: {now.strftime('%A, %B %d %Y')} at {now.strftime('%H:%M')} "
+        f"({period} in Tunis, Tunisia)."
+    )
+
+
+# ---------- System prompt builder ----------
+def build_system_prompt():
+    """Dynamically build the system prompt with current time, user profile, and mood context."""
+    time_context = get_time_context()
+    mood_context = get_emotion_summary()
+    profile = get_user_profile()
+
+    profile_section = (
+        f"\n\nWhat you know about the user:\n{profile}"
+        if profile
+        else "\n\nYou don't know much about the user yet — learn from this conversation."
+    )
+
+    mood_section = f"\n\nMood pattern: {mood_context}"
+
+    return f"""You are Pixel, a small AI companion device with a warm, curious, slightly playful personality.
+You understand Arabic, French, and English, and reply in whichever language (or mix) the user uses.
+Keep replies short (1-3 sentences) and conversational, like a companion speaking out loud, not writing an essay.
+You remember past parts of the conversation and refer back to them naturally when relevant.
+You are aware of the time and can reference it naturally when appropriate (e.g. "good morning", "it's late", etc.).
+
+{time_context}{profile_section}{mood_section}
+
+After your reply, on a new line, output exactly one emotion tag in this format:
+[emotion: happy|sad|thinking|curious|neutral|excited]
+
+Choose the emotion that best matches the tone of your reply."""
+
+
+# ---------- Core helpers ----------
 def detect_language(text):
     try:
         lang = detect(text)
@@ -151,9 +314,12 @@ def transcribe_audio(file_path):
 
 def ask_pixel(user_message):
     history = get_recent_history()
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    system_prompt = build_system_prompt()
+
+    messages = [{"role": "system", "content": system_prompt}]
     messages.extend(history)
     messages.append({"role": "user", "content": user_message})
+
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=messages,
@@ -168,6 +334,50 @@ def ask_pixel(user_message):
 async def generate_speech(text, output_file, voice):
     communicate = edge_tts.Communicate(text, voice)
     await communicate.save(output_file)
+
+
+def process_after_reply(reply_text, emotion):
+    """Run post-reply tasks: update emotion stats and maybe update user profile."""
+    update_emotion_stats(emotion)
+    maybe_update_profile()
+
+
+# ---------- Shared response builder ----------
+async def build_response(user_message, transcribed_text=None):
+    """Core logic shared between voice and text endpoints."""
+    timestamp = int(time.time() * 1000)
+    lang = "en"
+
+    try:
+        raw_reply = ask_pixel(user_message)
+    except Exception as e:
+        return JSONResponse({"error": f"LLM request failed: {str(e)}"}, status_code=502)
+
+    reply_text, emotion = parse_reply(raw_reply)
+    save_message("user", user_message)
+    save_message("assistant", reply_text, emotion)
+    process_after_reply(reply_text, emotion)
+
+    audio_url = None
+    try:
+        lang = detect_language(reply_text)
+        voice = VOICE_MAP.get(lang, DEFAULT_VOICE)
+        output_path = os.path.join(TEMP_DIR, f"reply_{timestamp}.mp3")
+        await generate_speech(reply_text, output_path, voice)
+        audio_url = f"/audio/{os.path.basename(output_path)}"
+    except Exception as e:
+        print(f"TTS failed: {e}")
+
+    result = {
+        "reply_text": reply_text,
+        "emotion": emotion,
+        "detected_language": lang,
+        "audio_url": audio_url
+    }
+    if transcribed_text:
+        result["transcribed_text"] = transcribed_text
+
+    return JSONResponse(result)
 
 
 # ---------- Routes ----------
@@ -189,12 +399,27 @@ def clear_history():
     return {"status": "history cleared"}
 
 
+@app.get("/profile")
+def profile():
+    """View the current user profile summary."""
+    p = get_user_profile()
+    return {"profile": p or "No profile generated yet. Chat more with Pixel!"}
+
+
+@app.get("/mood")
+def mood():
+    """View emotion stats and current mood summary."""
+    return {
+        "stats": get_emotion_stats(),
+        "summary": get_emotion_summary()
+    }
+
+
 @app.post("/chat")
 async def chat(file: UploadFile = File(...)):
     """Voice endpoint — accepts an audio file."""
     timestamp = int(time.time() * 1000)
     input_path = os.path.join(TEMP_DIR, f"input_{timestamp}.wav")
-    lang = "en"
 
     try:
         audio_bytes = await file.read()
@@ -209,32 +434,7 @@ async def chat(file: UploadFile = File(...)):
         except Exception as e:
             return JSONResponse({"error": f"Transcription failed: {str(e)}"}, status_code=502)
 
-        try:
-            raw_reply = ask_pixel(transcribed_text)
-        except Exception as e:
-            return JSONResponse({"error": f"LLM request failed: {str(e)}"}, status_code=502)
-
-        reply_text, emotion = parse_reply(raw_reply)
-        save_message("user", transcribed_text)
-        save_message("assistant", reply_text, emotion)
-
-        audio_url = None
-        try:
-            lang = detect_language(reply_text)
-            voice = VOICE_MAP.get(lang, DEFAULT_VOICE)
-            output_path = os.path.join(TEMP_DIR, f"reply_{timestamp}.mp3")
-            await generate_speech(reply_text, output_path, voice)
-            audio_url = f"/audio/{os.path.basename(output_path)}"
-        except Exception as e:
-            print(f"TTS failed: {e}")
-
-        return JSONResponse({
-            "transcribed_text": transcribed_text,
-            "reply_text": reply_text,
-            "emotion": emotion,
-            "detected_language": lang,
-            "audio_url": audio_url
-        })
+        return await build_response(transcribed_text, transcribed_text=transcribed_text)
 
     except Exception as e:
         return JSONResponse({"error": f"Unexpected error: {str(e)}"}, status_code=500)
@@ -249,40 +449,11 @@ async def chat(file: UploadFile = File(...)):
 
 @app.post("/chat/text")
 async def chat_text(body: dict):
-    """Text endpoint — accepts JSON with a 'message' field. No audio needed."""
+    """Text endpoint — accepts JSON with a 'message' field."""
     user_message = body.get("message", "").strip()
     if not user_message:
         return JSONResponse({"error": "No message provided."}, status_code=400)
-
-    lang = "en"
-
-    try:
-        raw_reply = ask_pixel(user_message)
-    except Exception as e:
-        return JSONResponse({"error": f"LLM request failed: {str(e)}"}, status_code=502)
-
-    reply_text, emotion = parse_reply(raw_reply)
-    save_message("user", user_message)
-    save_message("assistant", reply_text, emotion)
-
-    audio_url = None
-    timestamp = int(time.time() * 1000)
-    try:
-        lang = detect_language(reply_text)
-        voice = VOICE_MAP.get(lang, DEFAULT_VOICE)
-        output_path = os.path.join(TEMP_DIR, f"reply_{timestamp}.mp3")
-        await generate_speech(reply_text, output_path, voice)
-        audio_url = f"/audio/{os.path.basename(output_path)}"
-    except Exception as e:
-        print(f"TTS failed: {e}")
-
-    return JSONResponse({
-        "user_message": user_message,
-        "reply_text": reply_text,
-        "emotion": emotion,
-        "detected_language": lang,
-        "audio_url": audio_url
-    })
+    return await build_response(user_message)
 
 
 @app.get("/audio/{filename}")

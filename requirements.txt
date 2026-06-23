@@ -6,3 +6,4 @@ groq
 edge-tts
 langdetect
 psycopg2-binary
+pytz
