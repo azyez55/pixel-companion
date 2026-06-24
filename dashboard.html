@@ -423,3 +423,36 @@
 </script>
 </body>
 </html>
+<script>
+// Patch: poll for proactive notifications every 30 seconds
+async function checkNotifications() {
+  try {
+    const res = await fetch(`${API}/notifications`);
+    const data = await res.json();
+    if (data.messages && data.messages.length > 0) {
+      data.messages.forEach(msg => {
+        addMessage('assistant', msg.content, 'curious', null);
+      });
+      setEmotion('curious');
+    }
+  } catch (e) {}
+}
+
+// Poll notifications every 30s
+setInterval(checkNotifications, 30000);
+checkNotifications(); // check immediately on load
+
+// Patch: load reminders into right panel
+async function loadReminders() {
+  try {
+    const res = await fetch(`${API}/reminders`);
+    const data = await res.json();
+    const pending = (data.reminders || []).filter(r => !r.done);
+    const badge = document.getElementById('reminder-badge');
+    if (badge) badge.textContent = pending.length > 0 ? pending.length : '';
+  } catch (e) {}
+}
+
+setInterval(loadReminders, 60000);
+loadReminders();
+</script>
