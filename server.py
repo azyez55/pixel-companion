@@ -248,10 +248,12 @@ def get_time_context():
 
 # ---------- System prompt builder ----------
 def build_system_prompt():
-    """Dynamically build the system prompt with current time, user profile, and mood context."""
+    """Dynamically build the system prompt with current time, user profile, mood context, and active character."""
     time_context = get_time_context()
     mood_context = get_emotion_summary()
     profile = get_user_profile()
+    active_char_id = get_active_character()
+    character = CHARACTERS.get(active_char_id, CHARACTERS["pixel"])
 
     profile_section = (
         f"\n\nWhat you know about the user:\n{profile}"
@@ -261,11 +263,11 @@ def build_system_prompt():
 
     mood_section = f"\n\nMood pattern: {mood_context}"
 
-    return f"""You are Pixel, a small AI companion device with a warm, curious, slightly playful personality.
+    return f"""{character['personality']}
 You understand Arabic, French, and English, and reply in whichever language (or mix) the user uses.
 Keep replies short (1-3 sentences) and conversational, like a companion speaking out loud, not writing an essay.
 You remember past parts of the conversation and refer back to them naturally when relevant.
-You are aware of the time and can reference it naturally when appropriate (e.g. "good morning", "it's late", etc.).
+You are aware of the time and can reference it naturally when appropriate.
 
 {time_context}{profile_section}{mood_section}
 
@@ -462,3 +464,101 @@ def get_audio(filename: str):
     if os.path.exists(file_path):
         return FileResponse(file_path, media_type="audio/mpeg")
     return JSONResponse({"error": "File not found"}, status_code=404)
+
+
+# ── Serve dashboard ──
+from fastapi.responses import HTMLResponse
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard():
+    """Serve the companion dashboard UI."""
+    try:
+        with open("dashboard.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>Dashboard not found</h1>", status_code=404)
+
+
+# ── Character system ──
+CHARACTERS = {
+    "pixel": {
+        "name": "Pixel",
+        "description": "Your default companion. Warm, curious, slightly playful.",
+        "color": "#7c6af7",
+        "personality": "You are Pixel, a warm, curious, slightly playful AI companion.",
+    },
+    "nova": {
+        "name": "Nova",
+        "description": "A calm, analytical scientist. Precise and thoughtful.",
+        "color": "#38bdf8",
+        "personality": "You are Nova, a calm and analytical AI with a scientific mindset. You speak precisely and thoughtfully, often drawing on logic and curiosity about the world.",
+    },
+    "blaze": {
+        "name": "Blaze",
+        "description": "Energetic and hype. Always fired up.",
+        "color": "#f97316",
+        "personality": "You are Blaze, an energetic and enthusiastic AI companion. You speak with high energy, use casual language, and always hype up the person you're talking to.",
+    },
+    "sage": {
+        "name": "Sage",
+        "description": "Wise and poetic. Speaks in a calm, deep way.",
+        "color": "#4ade80",
+        "personality": "You are Sage, a wise and poetic AI companion. You speak calmly and deeply, often using metaphors and thoughtful observations about life.",
+    },
+    "glitch": {
+        "name": "Glitch",
+        "description": "A chaotic, funny, unpredictable trickster.",
+        "color": "#f472b6",
+        "personality": "You are Glitch, a chaotic and funny AI companion. You're unpredictable, love jokes and wordplay, and sometimes 'glitch' mid-sentence for comedic effect.",
+    },
+}
+
+# Store active character in memory (persists until server restart, then resets to pixel)
+# For full persistence, it's saved to the DB below
+def get_active_character():
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+            """)
+            cur.execute("SELECT value FROM settings WHERE key = 'active_character'")
+            row = cur.fetchone()
+    return row[0] if row else "pixel"
+
+
+def set_active_character(character_id):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+            """)
+            cur.execute("""
+                INSERT INTO settings (key, value) VALUES ('active_character', %s)
+                ON CONFLICT (key) DO UPDATE SET value = %s
+            """, (character_id, character_id))
+
+
+@app.get("/characters")
+def list_characters():
+    """List all available characters."""
+    active = get_active_character()
+    return {
+        "active": active,
+        "characters": {k: {**v, "active": k == active} for k, v in CHARACTERS.items()}
+    }
+
+
+@app.post("/characters/{character_id}")
+def switch_character(character_id: str):
+    """Switch to a different character."""
+    if character_id not in CHARACTERS:
+        return JSONResponse({"error": f"Character '{character_id}' not found."}, status_code=404)
+    set_active_character(character_id)
+    char = CHARACTERS[character_id]
+    return {"status": "switched", "character": char["name"], "message": f"Pixel is now {char['name']}!"}
