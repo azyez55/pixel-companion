@@ -206,7 +206,8 @@ def get_emotion_summary():
     if total == 0:
         return "No emotion data yet."
     top = [r for r in stats if r["count"] > 0][:3]
-    return f"User's most common moods: {', '.join(f'{r[\"emotion\"]} ({r[\"count\"]} times)' for r in top)}."
+    parts = [f"{r['emotion']} ({r['count']} times)" for r in top]
+    return f"User's most common moods: {', '.join(parts)}."
 
 
 # ---------- Settings / Character ----------
