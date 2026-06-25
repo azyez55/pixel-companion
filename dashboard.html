@@ -4,455 +4,436 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pixel</title>
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Mono&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#0a0a0f;
-  --surface:#111118;
-  --border:#1e1e2e;
-  --text:#e2e2f0;
-  --dim:#4a4a6a;
-  --px:4px;
-  --char:#7c6af7;
-}
-html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Press Start 2P',monospace;overflow:hidden}
+:root{--char:#7c6af7;--bg:#0a0a0f;--surface:#111118;--border:#1e1e2e;--dim:#4a4a6a;--text:#e2e2f0}
+html,body{height:100%;background:var(--bg);overflow:hidden;font-family:'Press Start 2P',monospace}
 
-/* ── Scanline overlay ── */
 body::before{
   content:'';position:fixed;inset:0;
-  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.08) 2px,rgba(0,0,0,0.08) 4px);
+  background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.06) 3px,rgba(0,0,0,0.06) 4px);
   pointer-events:none;z-index:999
 }
 
-/* ── Main canvas ── */
-#canvas{position:fixed;inset:0}
+#canvas{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
 
-/* ── Pixel character ── */
-#char{position:absolute;cursor:default;user-select:none}
-
-/* ── Body of the character (Beemo-style rectangle) ── */
-.char-body{
-  position:relative;
+#face{
   image-rendering:pixelated;
+  cursor:pointer;
+  transition:filter 0.2s;
 }
+#face:hover{filter:brightness(1.15)}
 
-/* ── Chat bubble ── */
+/* bubble */
 #bubble{
-  position:absolute;
+  position:fixed;
   background:var(--surface);
-  border:var(--px) solid var(--char);
-  padding:12px 16px;
-  font-size:8px;
-  line-height:1.8;
-  max-width:280px;
+  border:4px solid var(--char);
+  padding:14px 18px;
+  font-size:9px;
+  line-height:1.9;
+  max-width:320px;
   white-space:pre-wrap;
   word-break:break-word;
   opacity:0;
-  transition:opacity 0.3s;
+  transition:opacity 0.25s,transform 0.25s;
+  transform:translateY(8px);
   pointer-events:none;
-  image-rendering:pixelated;
+  z-index:500;
   box-shadow:4px 4px 0 var(--char);
+  color:var(--text);
 }
-#bubble.show{opacity:1}
-#bubble::after{
-  content:'';position:absolute;
-  bottom:-12px;left:20px;
-  border:6px solid transparent;
+#bubble.show{opacity:1;transform:translateY(0)}
+#bubble .tail{
+  position:absolute;bottom:-14px;left:24px;
+  border:7px solid transparent;
   border-top-color:var(--char);
 }
-
-/* ── HUD ── */
-#hud{
-  position:fixed;bottom:0;left:0;right:0;
-  display:flex;align-items:center;gap:12px;
-  padding:16px 24px;
-  background:linear-gradient(0deg,rgba(10,10,15,0.98) 80%,transparent);
-  z-index:100;
+#bubble .tail-inner{
+  position:absolute;bottom:-8px;left:28px;
+  border:5px solid transparent;
+  border-top-color:var(--surface);
+  z-index:1;
 }
 
-#msg-input{
-  flex:1;
-  background:var(--surface);
-  border:var(--px) solid var(--dim);
-  color:var(--text);
-  font-family:'Press Start 2P',monospace;
-  font-size:8px;
-  padding:10px 14px;
-  outline:none;
-  transition:border-color 0.2s;
-  image-rendering:pixelated;
-}
-#msg-input:focus{border-color:var(--char)}
-#msg-input::placeholder{color:var(--dim)}
-
-.hud-btn{
-  background:var(--surface);
-  border:var(--px) solid var(--dim);
-  color:var(--text);
-  font-family:'Press Start 2P',monospace;
-  font-size:7px;
-  padding:10px 14px;
-  cursor:pointer;
-  transition:border-color 0.2s,color 0.2s;
-  white-space:nowrap;
-  image-rendering:pixelated;
-}
-.hud-btn:hover{border-color:var(--char);color:var(--char)}
-.hud-btn.active{border-color:#f87171;color:#f87171;animation:blink 0.6s steps(1) infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:0.4}}
-
-/* ── Status bar top ── */
+/* status bar */
 #statusbar{
   position:fixed;top:0;left:0;right:0;
   display:flex;align-items:center;justify-content:space-between;
-  padding:10px 20px;
-  background:linear-gradient(180deg,rgba(10,10,15,0.98) 80%,transparent);
-  z-index:100;
-  font-size:7px;
-  color:var(--dim);
+  padding:12px 24px;
+  background:linear-gradient(180deg,rgba(10,10,15,0.97) 80%,transparent);
+  z-index:100;font-size:7px;color:var(--dim);
 }
-.status-name{color:var(--char);font-size:9px}
-.status-dot{
-  display:inline-block;width:6px;height:6px;border-radius:50%;
-  background:#4ade80;box-shadow:0 0 6px #4ade80;
-  margin-right:6px;animation:pulse-dot 2s ease-in-out infinite;
-}
-@keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:0.3}}
+.status-name{color:var(--char);font-size:10px;letter-spacing:2px}
+.sdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#4ade80;box-shadow:0 0 8px #4ade80;margin-right:8px;animation:sdot 2s ease-in-out infinite}
+@keyframes sdot{0%,100%{opacity:1}50%{opacity:0.3}}
+#emotion-label{color:var(--char);transition:color 0.4s}
+#char-toggle{cursor:pointer;padding:4px 10px;border:2px solid var(--dim);transition:border-color 0.2s}
+#char-toggle:hover{border-color:var(--char);color:var(--char)}
 
-/* ── Notification bell ── */
-#notif-count{
-  display:none;background:#f87171;color:#0a0a0f;
-  font-size:6px;padding:2px 5px;margin-left:8px;
-}
-
-/* ── Character switcher panel ── */
+/* char panel */
 #char-panel{
-  position:fixed;top:50px;right:16px;
-  background:var(--surface);
-  border:var(--px) solid var(--border);
-  padding:16px;
-  font-size:7px;
-  display:none;
-  z-index:200;
-  min-width:200px;
-  box-shadow:4px 4px 0 rgba(0,0,0,0.5);
+  position:fixed;top:52px;right:20px;
+  background:var(--surface);border:4px solid var(--border);
+  padding:16px;font-size:7px;display:none;z-index:200;
+  min-width:220px;box-shadow:4px 4px 0 rgba(0,0,0,0.6)
 }
 #char-panel.show{display:block}
-.char-option{
-  display:flex;align-items:center;gap:10px;
-  padding:8px;border:var(--px) solid transparent;
-  cursor:pointer;margin-bottom:6px;transition:border-color 0.2s;
+.char-opt{
+  display:flex;align-items:center;gap:10px;padding:9px;
+  border:3px solid transparent;cursor:pointer;margin-bottom:6px;
+  transition:border-color 0.15s
 }
-.char-option:hover{border-color:var(--dim)}
-.char-option.active{border-color:var(--char)}
-.char-pip{width:10px;height:10px;image-rendering:pixelated}
-.char-option-name{color:var(--text);font-size:7px}
-.char-option-desc{color:var(--dim);font-size:6px;margin-top:3px}
+.char-opt:hover{border-color:var(--dim)}
+.char-opt.active{border-color:var(--char)}
+.char-pip{width:10px;height:10px;flex-shrink:0}
+.char-opt-name{color:var(--text);font-size:7px;margin-bottom:3px}
+.char-opt-desc{color:var(--dim);font-size:6px}
 
-/* ── Pixel-art face drawn with CSS ── */
-.px-face{image-rendering:pixelated;position:relative}
+/* hud */
+#hud{
+  position:fixed;bottom:0;left:0;right:0;
+  display:flex;align-items:center;gap:10px;padding:14px 24px;
+  background:linear-gradient(0deg,rgba(10,10,15,0.97) 80%,transparent);
+  z-index:100;
+}
+#msg-input{
+  flex:1;background:var(--surface);border:3px solid var(--dim);
+  color:var(--text);font-family:'Press Start 2P',monospace;font-size:8px;
+  padding:10px 14px;outline:none;transition:border-color 0.2s
+}
+#msg-input:focus{border-color:var(--char)}
+#msg-input::placeholder{color:var(--dim)}
+.hbtn{
+  background:var(--surface);border:3px solid var(--dim);color:var(--text);
+  font-family:'Press Start 2P',monospace;font-size:7px;padding:10px 14px;
+  cursor:pointer;white-space:nowrap;transition:border-color 0.2s,color 0.2s
+}
+.hbtn:hover{border-color:var(--char);color:var(--char)}
+.hbtn.rec{border-color:#f87171;color:#f87171;animation:blink 0.5s steps(1) infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.4}}
+
+/* hover ripple */
+.ripple{
+  position:fixed;pointer-events:none;z-index:998;
+  border-radius:50%;border:3px solid var(--char);
+  animation:ripple-out 0.6s ease-out forwards
+}
+@keyframes ripple-out{
+  from{width:20px;height:20px;opacity:0.8;margin-top:-10px;margin-left:-10px}
+  to{width:80px;height:80px;opacity:0;margin-top:-40px;margin-left:-40px}
+}
 </style>
 </head>
 <body>
 
 <div id="canvas">
-  <div id="char">
-    <div id="bubble"></div>
-    <canvas id="face" width="160" height="200"></canvas>
-  </div>
+  <canvas id="face"></canvas>
+</div>
+
+<div id="bubble">
+  <span id="bubble-text"></span>
+  <div class="tail"></div>
+  <div class="tail-inner"></div>
 </div>
 
 <div id="statusbar">
-  <div>
-    <span class="status-name" id="char-name">PIXEL</span>
-    <span id="notif-count"></span>
-  </div>
-  <div style="display:flex;align-items:center;gap:16px">
-    <span id="emotion-label" style="color:var(--char)">NEUTRAL</span>
-    <span><span class="status-dot"></span><span id="status-text">ONLINE</span></span>
-    <span id="char-toggle" style="cursor:pointer;color:var(--dim)" onclick="toggleCharPanel()">▼ SWITCH</span>
+  <span class="status-name" id="char-name">PIXEL</span>
+  <div style="display:flex;align-items:center;gap:20px">
+    <span id="emotion-label">NEUTRAL</span>
+    <span><span class="sdot"></span><span id="stext">ONLINE</span></span>
+    <span id="char-toggle" onclick="toggleCharPanel()">▼ SWITCH</span>
   </div>
 </div>
 
 <div id="char-panel">
-  <div style="color:var(--dim);margin-bottom:12px;font-size:6px">SELECT COMPANION</div>
-  <div id="char-options"></div>
+  <div style="color:var(--dim);margin-bottom:12px;font-size:6px;letter-spacing:1px">SELECT COMPANION</div>
+  <div id="char-opts"></div>
 </div>
 
 <div id="hud">
-  <input id="msg-input" type="text" placeholder="TALK TO PIXEL..." maxlength="200">
-  <button class="hud-btn" id="record-btn" onclick="toggleRecord()">⏺ REC</button>
-  <button class="hud-btn" onclick="sendMessage()">▶ SEND</button>
+  <input id="msg-input" type="text" placeholder="TALK TO PIXEL..." maxlength="300">
+  <button class="hbtn" id="rec-btn" onclick="toggleRecord()">⏺ REC</button>
+  <button class="hbtn" onclick="sendMessage()">▶ SEND</button>
 </div>
 
 <script>
 const API = '';
 
-// ── Character data ──
 const CHARS = {
-  pixel:  {name:'PIXEL', color:'#7c6af7', desc:'warm & curious'},
-  nova:   {name:'NOVA',  color:'#38bdf8', desc:'calm scientist'},
-  blaze:  {name:'BLAZE', color:'#f97316', desc:'hype & energy'},
-  sage:   {name:'SAGE',  color:'#4ade80', desc:'wise & poetic'},
-  glitch: {name:'GLITCH',color:'#f472b6', desc:'chaotic trickster'},
+  pixel:  {name:'PIXEL', color:'#7c6af7',
+    hover:['hey there!','whatcha doing?','*waves*','hi hi!','...oh! hello'],
+    click:['ow! that tickles','hehe stop it!','hey!! >_<','*giggles*','you clicked me!'],
+    idle: ['...','thinking...','*hums quietly*','bored...','zzzz...']},
+  nova:   {name:'NOVA',  color:'#38bdf8',
+    hover:['calculating...','scanning you','processing...','interesting specimen','hello, human'],
+    click:['unexpected input','recalibrating...','that was... odd','noted.','error: poke detected'],
+    idle: ['analyzing data','running models','...','hypothesis forming','all systems nominal']},
+  blaze:  {name:'BLAZE', color:'#f97316',
+    hover:["LET'S GOOO!!!",'YOOO what up!','HYPE!','you ready?!',"let's DO this"],
+    click:['YEAH BABY!!!','WOOOOO!!','LETS GOOOOO','HYPED UP!!!','FIRE FIRE FIRE'],
+    idle: ['SO BORED RN','energy: 9000','LETS DO SOMETHING','tick tock tick tock','COME ON!!']},
+  sage:   {name:'SAGE',  color:'#4ade80',
+    hover:['the observer arrives...','stillness and motion, one','your presence is felt','all things return','welcome, wanderer'],
+    click:['pain is but sensation','even stones feel the rain','the river bends...','hm. unexpected.','all is connected'],
+    idle: ['...','the stars move slowly','patience is a root','silence speaks','contemplating']},
+  glitch: {name:'GLITCH',color:'#f472b6',
+    hover:['H̷̡̛ELLO̵','ERROR 404','glitch detected!','wh-wh-whooo??','01001000 01001001'],
+    click:['!?!?!?!?!','SYSTEM BREACHED','glitching out!!','AAAA̷̡̕AAAA','critical hit!'],
+    idle: ['err0r...','reboot required?','GLITCHING','01100001','memor̷y corrupt̶ed']},
 };
 
-const EMOTION_COLORS = {
+const EMOTIONS = {
   happy:'#4ade80', sad:'#60a5fa', thinking:'#f59e0b',
   curious:'#a78bfa', neutral:'#94a3b8', excited:'#f472b6',
 };
 
 let activeChar = 'pixel';
-let currentEmotion = 'neutral';
 let currentColor = '#7c6af7';
-let isRecording = false;
+let currentEmotion = 'neutral';
+let isTalking = false;
+let isBlinking = false;
+let blinkTimer = 0;
+let hoverActive = false;
+let idleTimer = 0;
 let mediaRecorder = null;
 let audioChunks = [];
-let isTalking = false;
-let talkInterval = null;
-let charX = 0, charY = 0;
-let velX = 0.4, velY = 0.3;
-let blinkTimer = 0;
-let isBlinking = false;
-let idleTimer = 0;
-let idleAction = null;
+let isRecording = false;
 
-// ── Canvas face renderer ──
-const canvas = document.getElementById('face');
-const ctx = canvas.getContext('2d');
-const W = 160, H = 200;
-const PX = 8; // pixel size
+// ── Canvas setup ──
+const cv = document.getElementById('face');
+const ctx = cv.getContext('2d');
+let PX = 10;
+let GW = 20, GH = 26;
 
-function rgb(hex){
-  const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
-  return `rgb(${r},${g},${b})`;
+function resize(){
+  const vw = window.innerWidth, vh = window.innerHeight - 110;
+  PX = Math.floor(Math.min(vw/GW, vh/GH) * 0.88);
+  PX = Math.max(8, Math.min(PX, 36));
+  cv.width = GW * PX;
+  cv.height = GH * PX;
 }
+resize();
+window.addEventListener('resize', resize);
 
-function drawPixel(x,y,color){
-  ctx.fillStyle = color;
-  ctx.fillRect(x*PX, y*PX, PX, PX);
-}
-
-function drawRect(x,y,w,h,color){
-  for(let i=x;i<x+w;i++) for(let j=y;j<y+h;j++) drawPixel(i,j,color);
-}
+function dp(x,y,c){ ctx.fillStyle=c; ctx.fillRect(x*PX,y*PX,PX,PX); }
+function dr(x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(x*PX,y*PX,w*PX,h*PX); }
 
 function drawFace(){
-  ctx.clearRect(0,0,W,H);
+  ctx.clearRect(0,0,cv.width,cv.height);
+  const C = currentColor;
+  const DARK = '#0a0a0f';
+  const LIGHT = '#e2e2f0';
+  const SCREEN = '#0d0d16';
+  const EC = EMOTIONS[currentEmotion] || LIGHT;
 
-  const col = currentColor;
-  const dark = '#0a0a0f';
-  const light = '#e2e2f0';
-  const screen = '#111118';
-
-  // Body (Beemo-style rounded rectangle)
-  // Outer shell
-  drawRect(1,2,18,21,col);
-  // Inner screen
-  drawRect(2,3,16,14,screen);
-  // Bottom body
-  drawRect(2,17,16,5,col);
-  // Antenna
-  drawPixel(9,0,col);
-  drawPixel(10,0,col);
-  drawPixel(10,1,col);
-  drawPixel(11,1,col);
-
+  // Body shell
+  dr(1,1,18,24,C);
+  // Corners cut (pixel-art rounding)
+  dp(1,1,DARK); dp(18,1,DARK); dp(1,24,DARK); dp(18,24,DARK);
+  // Inner screen area
+  dr(2,2,16,15,SCREEN);
   // Screen bezel
-  drawRect(3,4,14,12,'#0d0d14');
+  dr(3,3,14,13,'#080810');
+
+  // Antenna
+  dp(9,0,C); dp(10,0,C); dp(11,0,C);
+  dp(10,1,C);
 
   // ── Eyes ──
-  const eyeColor = EMOTION_COLORS[currentEmotion] || light;
-
   if(isBlinking){
-    // Blink — flat line
-    drawRect(4,8,3,1,eyeColor);
-    drawRect(13,8,3,1,eyeColor);
+    dr(4,8,4,1,EC); dr(12,8,4,1,EC);
+  } else if(hoverActive){
+    // Surprised / wide eyes
+    dr(4,7,4,4,EC); dr(12,7,4,4,EC);
+    dp(4,7,LIGHT); dp(12,7,LIGHT);
+    // Pupils
+    dp(5,8,DARK); dp(13,8,DARK);
   } else {
-    // Normal eyes based on emotion
-    if(currentEmotion === 'sad'){
-      // Droopy eyes — shifted down
-      drawRect(4,9,3,3,eyeColor);
-      drawRect(13,9,3,3,eyeColor);
-      // Teardrops
-      drawPixel(5,12,eyeColor);
-      drawPixel(14,12,eyeColor);
-    } else if(currentEmotion === 'excited'){
+    if(currentEmotion==='sad'){
+      dr(4,9,4,3,EC); dr(12,9,4,3,EC);
+      dp(5,12,EC); dp(13,12,EC); // tears
+    } else if(currentEmotion==='excited'){
       // Star eyes
-      drawPixel(5,7,eyeColor); drawPixel(5,9,eyeColor);
-      drawRect(4,8,3,1,eyeColor); drawPixel(5,8,eyeColor);
-      drawPixel(14,7,eyeColor); drawPixel(14,9,eyeColor);
-      drawRect(13,8,3,1,eyeColor); drawPixel(14,8,eyeColor);
-    } else if(currentEmotion === 'thinking'){
-      // One eye squinted
-      drawRect(4,8,3,3,eyeColor);
-      drawRect(13,9,3,1,eyeColor);
-    } else if(currentEmotion === 'curious'){
-      // One eyebrow raised
-      drawPixel(3,7,eyeColor);
-      drawRect(4,8,3,3,eyeColor);
-      drawRect(13,8,3,3,eyeColor);
+      dp(5,7,EC); dp(6,7,EC); dr(4,8,4,1,EC); dp(5,9,EC); dp(6,9,EC);
+      dp(13,7,EC); dp(14,7,EC); dr(12,8,4,1,EC); dp(13,9,EC); dp(14,9,EC);
+    } else if(currentEmotion==='thinking'){
+      dr(4,8,4,3,EC); dr(12,9,4,2,EC); // one squinting
+    } else if(currentEmotion==='curious'){
+      dp(3,7,EC); dr(4,8,4,3,EC); dr(12,8,4,3,EC); // eyebrow
     } else {
-      // Default / happy / neutral — round eyes
-      drawRect(4,8,3,3,eyeColor);
-      drawRect(13,8,3,3,eyeColor);
-      // Shine dots
-      drawPixel(4,8,light);
-      drawPixel(13,8,light);
+      dr(4,8,4,3,EC); dr(12,8,4,3,EC);
+      dp(4,8,LIGHT); dp(12,8,LIGHT); // shine
     }
   }
 
   // ── Mouth ──
   if(isTalking){
-    // Open mouth — animate between shapes
-    const frame = Math.floor(Date.now()/120) % 3;
-    if(frame === 0){
-      drawRect(6,13,8,1,eyeColor);
-    } else if(frame === 1){
-      drawRect(6,12,8,2,eyeColor);
-      drawPixel(6,12,dark); drawPixel(13,12,dark);
-    } else {
-      drawRect(6,12,8,3,eyeColor);
-      drawRect(7,12,6,1,dark);
-    }
+    const f = Math.floor(Date.now()/100)%3;
+    if(f===0){ dr(6,14,8,1,EC); }
+    else if(f===1){ dr(6,13,8,2,EC); dp(6,13,DARK); dp(13,13,DARK); }
+    else { dr(6,13,8,3,EC); dr(7,13,6,1,DARK); }
   } else {
-    if(currentEmotion === 'happy' || currentEmotion === 'excited'){
-      // Smile
-      drawRect(6,13,8,1,eyeColor);
-      drawPixel(5,12,eyeColor);
-      drawPixel(14,12,eyeColor);
-    } else if(currentEmotion === 'sad'){
-      // Frown
-      drawRect(6,14,8,1,eyeColor);
-      drawPixel(5,15,eyeColor);
-      drawPixel(14,15,eyeColor);
-    } else if(currentEmotion === 'thinking'){
-      // Side mouth
-      drawRect(8,13,5,1,eyeColor);
-      drawPixel(13,12,eyeColor);
+    if(hoverActive){
+      // Surprised O
+      dr(7,13,6,3,EC); dr(8,14,4,1,DARK);
+    } else if(currentEmotion==='happy'||currentEmotion==='excited'){
+      dr(6,14,8,1,EC); dp(5,13,EC); dp(14,13,EC);
+    } else if(currentEmotion==='sad'){
+      dr(6,15,8,1,EC); dp(5,16,EC); dp(14,16,EC);
+    } else if(currentEmotion==='thinking'){
+      dr(8,14,5,1,EC); dp(13,13,EC);
     } else {
-      // Neutral line
-      drawRect(6,13,8,1,eyeColor);
+      dr(6,14,8,1,EC);
     }
   }
 
-  // ── Bottom controls (Beemo buttons) ──
-  drawRect(3,18,2,2,dark);
-  drawRect(7,18,2,2,dark);
-  drawRect(11,18,2,2,dark);
-  drawRect(15,18,2,2,dark);
-  // D-pad hint
-  drawPixel(4,18,col); drawPixel(4,19,col);
-  drawPixel(8,18,col);
+  // ── Bottom body details ──
+  dr(2,17,16,7,C);
+  // Buttons row
+  dr(3,19,2,2,DARK); dr(7,19,2,2,DARK); dr(11,19,2,2,DARK); dr(15,19,2,2,DARK);
+  // D-pad
+  dp(4,19,EC); dp(4,20,EC); dp(3,20,EC); dp(5,20,EC);
+  // Action buttons
+  dp(15,19,C); dp(16,20,C); dp(15,21,C); dp(14,20,C);
 
   // Legs
-  drawRect(3,23,3,2,col);
-  drawRect(14,23,3,2,col);
-  drawRect(3,25,4,1,col);
-  drawRect(13,25,4,1,col);
+  dr(3,25,3,1,C); dr(14,25,3,1,C);
+  dr(3,25,2,1,'#0a0a0f'); dr(15,25,2,1,'#0a0a0f');
+  dr(3,25,3,1,C); dr(14,25,3,1,C);
+
+  // Feet
+  dr(2,25,4,1,C); dr(14,25,4,1,C);
 }
 
 // ── Animation loop ──
-function animLoop(){
+function loop(){
   drawFace();
-  requestAnimationFrame(animLoop);
-}
-animLoop();
 
-// ── Drift movement ──
-function moveChar(){
-  const el = document.getElementById('char');
-  const canvas = document.getElementById('canvas');
-  const pw = canvas.offsetWidth - 160;
-  const ph = canvas.offsetHeight - 280;
-
-  charX += velX;
-  charY += velY;
-
-  // Bounce off walls
-  if(charX <= 0){ charX = 0; velX = Math.abs(velX); }
-  if(charX >= pw){ charX = pw; velX = -Math.abs(velX); }
-  if(charY <= 40){ charY = 40; velY = Math.abs(velY); }
-  if(charY >= ph){ charY = ph; velY = -Math.abs(velY); }
-
-  // Slight random drift
-  velX += (Math.random()-0.5)*0.05;
-  velY += (Math.random()-0.5)*0.05;
-  velX = Math.max(-1.2, Math.min(1.2, velX));
-  velY = Math.max(-0.8, Math.min(0.8, velY));
-
-  el.style.left = charX + 'px';
-  el.style.top = charY + 'px';
-
-  // Blink randomly
+  // Blink logic
   blinkTimer++;
-  if(blinkTimer > 180 + Math.random()*120){
+  if(blinkTimer > 200 + Math.random()*150){
     blinkTimer = 0;
     isBlinking = true;
-    setTimeout(()=>{ isBlinking = false; }, 120);
-  }
-}
-
-setInterval(moveChar, 16);
-
-// ── Init position ──
-charX = window.innerWidth/2 - 80;
-charY = window.innerHeight/2 - 100;
-
-// ── Bubble positioning ──
-function showBubble(text){
-  const bubble = document.getElementById('bubble');
-  bubble.textContent = text;
-  bubble.classList.add('show');
-
-  // Position bubble above or below
-  const charEl = document.getElementById('char');
-  const rect = charEl.getBoundingClientRect();
-  if(rect.top > 160){
-    bubble.style.bottom = '210px';
-    bubble.style.top = 'auto';
-    bubble.style.removeProperty('transform');
-    bubble.style.removeProperty('top');
-    bubble.querySelector && null;
-    bubble.style.cssText += ';bottom:210px;top:auto';
-  } else {
-    bubble.style.top = '210px';
-    bubble.style.bottom = 'auto';
+    setTimeout(()=>isBlinking=false, 100);
   }
 
-  clearTimeout(window._bubbleTimer);
-  window._bubbleTimer = setTimeout(()=>{ bubble.classList.remove('show'); }, 8000);
+  // Idle reaction
+  idleTimer++;
+  if(idleTimer > 600){
+    idleTimer = 0;
+    const char = CHARS[activeChar];
+    if(char && !isTalking){
+      const lines = char.idle;
+      showBubble(lines[Math.floor(Math.random()*lines.length)], 3000);
+    }
+  }
+
+  requestAnimationFrame(loop);
+}
+loop();
+
+// ── Mouse interaction ──
+cv.addEventListener('mouseenter', ()=>{
+  hoverActive = true;
+  const char = CHARS[activeChar];
+  if(char){
+    const lines = char.hover;
+    showBubble(lines[Math.floor(Math.random()*lines.length)], 2500);
+  }
+});
+
+cv.addEventListener('mouseleave', ()=>{
+  hoverActive = false;
+});
+
+cv.addEventListener('click', (e)=>{
+  const char = CHARS[activeChar];
+  if(char){
+    const lines = char.click;
+    showBubble(lines[Math.floor(Math.random()*lines.length)], 3000);
+    // Pick emotion based on character
+    const clickEmotions = {
+      pixel:'happy', nova:'thinking', blaze:'excited',
+      sage:'curious', glitch:'excited'
+    };
+    setEmotion(clickEmotions[activeChar]||'happy');
+    setTimeout(()=>setEmotion('neutral'), 3000);
+  }
+  // Ripple effect
+  spawnRipple(e.clientX, e.clientY);
+});
+
+function spawnRipple(x,y){
+  const r = document.createElement('div');
+  r.className = 'ripple';
+  r.style.left = x+'px';
+  r.style.top = y+'px';
+  r.style.borderColor = currentColor;
+  document.body.appendChild(r);
+  setTimeout(()=>r.remove(), 650);
 }
 
-// ── Send text message ──
+// ── Bubble ──
+function showBubble(text, duration=4000){
+  const b = document.getElementById('bubble');
+  const bt = document.getElementById('bubble-text');
+  bt.textContent = text;
+  b.style.borderColor = currentColor;
+  b.querySelector('.tail').style.borderTopColor = currentColor;
+
+  // Position above the character
+  const rect = cv.getBoundingClientRect();
+  const bw = 320;
+  let bx = rect.left + rect.width/2 - bw/2;
+  bx = Math.max(16, Math.min(bx, window.innerWidth - bw - 16));
+  const by = rect.top - 20;
+
+  b.style.left = bx+'px';
+  b.style.top = Math.max(60, by - 120)+'px';
+  b.style.width = bw+'px';
+
+  b.classList.add('show');
+  clearTimeout(window._bt);
+  window._bt = setTimeout(()=>b.classList.remove('show'), duration);
+}
+
+// ── Emotion ──
+function setEmotion(e){
+  currentEmotion = e;
+  const col = EMOTIONS[e]||'#94a3b8';
+  document.getElementById('emotion-label').textContent = e.toUpperCase();
+  document.getElementById('emotion-label').style.color = col;
+}
+
+// ── Send text ──
 async function sendMessage(){
-  const input = document.getElementById('msg-input');
-  const text = input.value.trim();
+  const inp = document.getElementById('msg-input');
+  const text = inp.value.trim();
   if(!text) return;
-  input.value = '';
-  showBubble('...');
-  startTalking();
-
+  inp.value = '';
+  showBubble('...', 10000);
+  isTalking = true;
   try{
     const res = await fetch(`${API}/chat/text`,{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({message:text})
     });
-    const data = await res.json();
-    setEmotion(data.emotion || 'neutral');
-    showBubble(data.reply_text || 'hmm...');
-    if(data.audio_url) playAudio(`${API}${data.audio_url}`);
-    else stopTalking();
-  } catch(e){
-    showBubble('connection lost...');
-    setEmotion('sad');
-    stopTalking();
+    const d = await res.json();
+    setEmotion(d.emotion||'neutral');
+    showBubble(d.reply_text||'...', 8000);
+    if(d.audio_url) playAudio(`${API}${d.audio_url}`);
+    else isTalking = false;
+  } catch(err){
+    showBubble('connection lost...', 3000);
+    setEmotion('sad'); isTalking = false;
   }
 }
 
 // ── Voice recording ──
 async function toggleRecord(){
+  const btn = document.getElementById('rec-btn');
   if(!isRecording){
     try{
       const stream = await navigator.mediaDevices.getUserMedia({audio:true});
@@ -462,151 +443,131 @@ async function toggleRecord(){
       mediaRecorder.onstop = sendAudio;
       mediaRecorder.start();
       isRecording = true;
-      document.getElementById('record-btn').classList.add('active');
-      document.getElementById('record-btn').textContent = '⏹ STOP';
-      showBubble('listening...');
+      btn.classList.add('rec');
+      btn.textContent = '⏹ STOP';
+      showBubble('listening...', 30000);
+      setEmotion('curious');
     } catch(e){
-      showBubble('mic blocked!');
+      showBubble('mic blocked!', 3000);
       setEmotion('sad');
     }
   } else {
     mediaRecorder.stop();
     mediaRecorder.stream.getTracks().forEach(t=>t.stop());
     isRecording = false;
-    document.getElementById('record-btn').classList.remove('active');
-    document.getElementById('record-btn').textContent = '⏺ REC';
+    btn.classList.remove('rec');
+    btn.textContent = '⏺ REC';
   }
 }
 
 async function sendAudio(){
-  showBubble('processing...');
-  startTalking();
+  showBubble('processing...', 10000);
+  isTalking = true;
   const blob = new Blob(audioChunks, {type:'audio/webm'});
   const form = new FormData();
-  form.append('file', blob, 'recording.webm');
+  form.append('file', blob, 'rec.webm');
   try{
     const res = await fetch(`${API}/chat`,{method:'POST',body:form});
-    const data = await res.json();
-    setEmotion(data.emotion || 'neutral');
-    const text = data.transcribed_text ? `"${data.transcribed_text}"\n\n${data.reply_text}` : data.reply_text;
-    showBubble(text || 'hmm...');
-    if(data.audio_url) playAudio(`${API}${data.audio_url}`);
-    else stopTalking();
+    const d = await res.json();
+    setEmotion(d.emotion||'neutral');
+    const txt = d.transcribed_text ? `"${d.transcribed_text}"\n\n${d.reply_text}` : (d.reply_text||'...');
+    showBubble(txt, 8000);
+    if(d.audio_url) playAudio(`${API}${d.audio_url}`);
+    else isTalking = false;
   } catch(e){
-    showBubble('error...');
-    setEmotion('sad');
-    stopTalking();
+    showBubble('error...', 3000);
+    setEmotion('sad'); isTalking = false;
   }
 }
 
-// ── Audio playback ──
 function playAudio(url){
-  startTalking();
-  const audio = new Audio(url);
-  audio.onended = stopTalking;
-  audio.onerror = stopTalking;
-  audio.play().catch(stopTalking);
-}
-
-function startTalking(){
   isTalking = true;
+  const a = new Audio(url);
+  a.onended = ()=>isTalking=false;
+  a.onerror = ()=>isTalking=false;
+  a.play().catch(()=>isTalking=false);
 }
 
-function stopTalking(){
-  isTalking = false;
-}
-
-// ── Emotion ──
-function setEmotion(emotion){
-  currentEmotion = emotion;
-  const color = EMOTION_COLORS[emotion] || '#94a3b8';
-  document.getElementById('emotion-label').textContent = emotion.toUpperCase();
-  document.getElementById('emotion-label').style.color = color;
-}
-
-// ── Character switching ──
+// ── Character panel ──
 function toggleCharPanel(){
   document.getElementById('char-panel').classList.toggle('show');
-  loadCharacters();
+  loadChars();
 }
 
-async function loadCharacters(){
+async function loadChars(){
   try{
     const res = await fetch(`${API}/characters`);
-    const data = await res.json();
-    const el = document.getElementById('char-options');
-    el.innerHTML = Object.entries(data.characters).map(([id,c])=>`
-      <div class="char-option ${c.active?'active':''}" onclick="switchChar('${id}')"
-        style="${c.active?`border-color:${CHARS[id]?.color||'#7c6af7'}`:''}">
+    const d = await res.json();
+    activeChar = d.active;
+    const el = document.getElementById('char-opts');
+    el.innerHTML = Object.entries(d.characters).map(([id,c])=>`
+      <div class="char-opt ${c.active?'active':''}" onclick="switchChar('${id}')"
+        style="${c.active?`border-color:${CHARS[id]?.color}`:''}">
         <div class="char-pip" style="background:${CHARS[id]?.color||'#7c6af7'}"></div>
         <div>
-          <div class="char-option-name" style="${c.active?`color:${CHARS[id]?.color||'#7c6af7'}`:''}">
-            ${CHARS[id]?.name||id.toUpperCase()}
-          </div>
-          <div class="char-option-desc">${c.description}</div>
+          <div class="char-opt-name" style="${c.active?`color:${CHARS[id]?.color}`:''}">
+            ${CHARS[id]?.name||id.toUpperCase()}</div>
+          <div class="char-opt-desc">${c.description}</div>
         </div>
       </div>`).join('');
-    activeChar = data.active;
-    const ac = CHARS[data.active];
-    if(ac){
-      currentColor = ac.color;
-      document.documentElement.style.setProperty('--char', ac.color);
-      document.getElementById('char-name').textContent = ac.name;
-    }
+    applyChar(d.active);
   } catch(e){}
+}
+
+function applyChar(id){
+  const c = CHARS[id];
+  if(!c) return;
+  activeChar = id;
+  currentColor = c.color;
+  document.documentElement.style.setProperty('--char', c.color);
+  document.getElementById('char-name').textContent = c.name;
 }
 
 async function switchChar(id){
   await fetch(`${API}/characters/${id}`,{method:'POST'});
+  applyChar(id);
+  document.getElementById('char-panel').classList.remove('show');
   const c = CHARS[id];
   if(c){
-    currentColor = c.color;
-    document.documentElement.style.setProperty('--char', c.color);
-    document.getElementById('char-name').textContent = c.name;
-    showBubble(`switching to ${c.name.toLowerCase()} mode...`);
+    showBubble(`${c.name} mode activated!`, 3000);
     setEmotion('excited');
+    setTimeout(()=>setEmotion('neutral'), 3000);
   }
-  document.getElementById('char-panel').classList.remove('show');
-  setTimeout(loadCharacters, 300);
 }
 
-// ── Notifications polling ──
-async function checkNotifications(){
+// ── Notifications ──
+async function checkNotifs(){
   try{
     const res = await fetch(`${API}/notifications`);
-    const data = await res.json();
-    if(data.messages && data.messages.length > 0){
-      const msg = data.messages[data.messages.length-1];
-      showBubble(msg.content);
+    const d = await res.json();
+    if(d.messages?.length>0){
+      showBubble(d.messages[d.messages.length-1].content, 8000);
       setEmotion('curious');
     }
   } catch(e){}
 }
+
+// ── Close panel on outside click ──
+document.addEventListener('click',e=>{
+  const panel = document.getElementById('char-panel');
+  const toggle = document.getElementById('char-toggle');
+  if(!panel.contains(e.target)&&e.target!==toggle) panel.classList.remove('show');
+});
 
 // ── Enter to send ──
 document.getElementById('msg-input').addEventListener('keydown',e=>{
   if(e.key==='Enter') sendMessage();
 });
 
-// ── Close char panel on click outside ──
-document.addEventListener('click',e=>{
-  const panel = document.getElementById('char-panel');
-  const toggle = document.getElementById('char-toggle');
-  if(!panel.contains(e.target) && e.target !== toggle){
-    panel.classList.remove('show');
-  }
-});
-
 // ── Init ──
-loadCharacters();
+loadChars();
 setEmotion('neutral');
-setInterval(checkNotifications, 30000);
-
-// Startup message
+setInterval(checkNotifs, 30000);
 setTimeout(()=>{
-  showBubble('hey! press REC to talk\nor type below...');
+  showBubble('click me! or type below...',4000);
   setEmotion('happy');
-},800);
+  setTimeout(()=>setEmotion('neutral'),4000);
+},900);
 </script>
 </body>
 </html>
